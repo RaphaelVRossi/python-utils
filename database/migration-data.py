@@ -5,27 +5,18 @@ import sys
 if len(sys.argv) == 1:
     print(f'{sys.argv[1]} <URL database origin> <URL database destination>')
     print('URL = username/password@hostname:port/SID')
-    exit
+    sys.exit()
 
 CONNECTION_EXPORT= sys.argv[1]
-CONNECTION_IMPORT= sys.argv[2]
 
 def main():
-    connection = cx_Oracle.connect(CONNECTION_EXPORT, encoding='UTF-8', nencoding='UTF-8')    
-    #connection = cx_Oracle.connect('VVS', 'vvs', cx_Oracle.makedsn('192.168.33.155', 1521, 'doze'), encoding='UTF-8', nencoding='UTF-8')
-    cursor = connection.cursor()
-
-    fileIn = open('data.csv', 'r')
-
-    csvreader = csv.reader(fileIn, delimiter=';', lineterminator='\n', quotechar='"')
-    
-    for line in csvreader:
-        exportLine(line, cursor)
-
-    cursor.close()
-
-    connection.close()
-
+    with cx_Oracle.connect(CONNECTION_EXPORT, encoding='UTF-8', nencoding='UTF-8') as connection:
+    #with cx_Oracle.connect('VVS', 'vvs', cx_Oracle.makedsn('192.168.33.155', 1521, 'doze'), encoding='UTF-8', nencoding='UTF-8') as connection:
+        with connection.cursor() as cursor:
+            with open('data.csv', 'r') as file_in:
+                csvreader = csv.reader(file_in, delimiter=';', lineterminator='\n', quotechar='"')    
+                for line in csvreader:
+                    exportLine(line, cursor)
 
 def exportLine(line, cursor):
     table_name = line[0]
@@ -36,27 +27,34 @@ def exportLine(line, cursor):
     query = f'select * from {table_name} {where_params}'
     cursor.execute(query)
 
-    fileOut = open(f'{table_name}.txt', 'w')
+    with open(f'{table_name}.txt', 'w') as file_out:
+        writer = csv.writer(file_out, lineterminator='|\n', delimiter=';', escapechar='', quoting=csv.QUOTE_NONNUMERIC)
+        
+        columns = [i[0] for i in cursor.description]
 
-    writer = csv.writer(fileOut, lineterminator='|\n', delimiter=';', escapechar='', quoting=csv.QUOTE_NONNUMERIC)
+        createExternalTable(table_name, columns)
+        createTempTable(table_name)
 
-    columns = [i[0] for i in cursor.description]
+        writer.writerow(columns)
 
-    createExternalTable(table_name, columns)
-
-    writer.writerow(columns)
-
-    for row in cursor:
-        writer.writerow(row)
-
-    fileOut.close()
+        for row in cursor:
+            writer.writerow(row)
 
 
 def createExternalTable(table_name, columns):
-    ddl = f""" 
-    CREATE TABLE {table_name}_EXT
-        (
-    """
+    ddl = f"""
+SET SERVEROUTPUT ON SIZE UNLIMITED
+DECLARE
+    V_SYSDATE DATE;
+
+BEGIN
+
+V_SYSDATE := SYSDATE;
+
+DBMS_OUTPUT.PUT_LINE('INICIO CRIAÇÃO DA TABELA "{table_name}" EXTERNAL '|| V_SYSDATE);
+
+CREATE TABLE {table_name}_EXT
+    ("""
 
     for column in columns:
         ddl += f"""
@@ -64,45 +62,63 @@ def createExternalTable(table_name, columns):
     ddl = ddl[:-1]
 
     ddl += f"""
-        )
-            ORGANIZATION EXTERNAL
-        (
-            TYPE ORACLE_LOADER
-            DEFAULT DIRECTORY "EVVS_FILES"
-            ACCESS PARAMETERS
-                (
-                    RECORDS DELIMITED BY '|'
-                    SKIP 1
-                    FIELDS TERMINATED BY ';' OPTIONALLY ENCLOSED BY '"'
-                    MISSING FIELD VALUES ARE NULL
-                    REJECT ROWS WITH ALL NUL FIELDS
-                )
-            LOCATION
+    )
+    ORGANIZATION EXTERNAL
+    (
+        TYPE ORACLE_LOADER
+        DEFAULT DIRECTORY "EVVS_FILES"
+        ACCESS PARAMETERS
             (
-                '{table_name}.txt'
+                RECORDS DELIMITED BY '|'
+                SKIP 1
+                FIELDS TERMINATED BY ';' OPTIONALLY ENCLOSED BY '"'
+                MISSING FIELD VALUES ARE NULL
+                REJECT ROWS WITH ALL NUL FIELDS
             )
+        LOCATION
+        (
+            '{table_name}.txt'
         )
-    """
+    );
 
-    connection = cx_Oracle.connect(CONNECTION_IMPORT, encoding='UTF-8', nencoding='UTF-8')    
-    
-    cursor = connection.cursor()
+V_SYSDATE := SYSDATE;
 
-    cursor.execute(ddl)
+DBMS_OUTPUT.PUT_LINE('TERMINO CRIAÇÃO DA TABELA "{table_name}" EXTERNAL '|| V_SYSDATE);
 
-    print(ddl)
+END;
+/
+"""
+
+    with open(f'CREATE_{table_name}_EXT.sql', 'w') as ddl_file_ext:
+        ddl_file_ext.write(ddl)
 
 
-def trataResultado(cursorInternal):
-    for result in cursorInternal:
-        # print(type(result))
-        print(result)
-        for index in result:
-            teste += f'{index};'
-            print(index)
-        teste += '|\n'
+def createTempTable(table_name):
+    ddl = f"""
+SET SERVEROUTPUT ON SIZE UNLIMITED
+DECLARE
+    V_SYSDATE DATE;
 
-    print(teste)
+BEGIN
+
+V_SYSDATE := SYSDATE;
+
+DBMS_OUTPUT.PUT_LINE('INICIO CRIAÇÃO DA TABELA "{table_name}" TEMPORARIA '|| V_SYSDATE);
+
+CREATE TABLE {table_name}_TMP
+    AS
+        SELECT * FROM {table_name}_EXT;
+
+V_SYSDATE := SYSDATE;
+
+DBMS_OUTPUT.PUT_LINE('TERMINO CRIAÇÃO DA TABELA "{table_name}" TEMPORARIA '|| V_SYSDATE);
+
+END;
+/
+"""
+
+    with open(f'CREATE_{table_name}_TMP.sql', 'w') as ddl_file_ext:
+        ddl_file_ext.write(ddl)
 
 
 main()

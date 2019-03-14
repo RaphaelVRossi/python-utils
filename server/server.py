@@ -11,6 +11,10 @@ class SimpleRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         field_data = self.rfile.read(length)
         fields = urlparse.parse_qs(field_data)
         print field_data
+        self.wfile.write('{"TESTE":"TESTE"}')
+        return {
+            'TESTE': 'TESTE'
+        }
 
 def run(server_class=BaseHTTPServer.HTTPServer,
     handler_class=SimpleRequestHandler):
