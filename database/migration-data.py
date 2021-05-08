@@ -27,8 +27,8 @@ def exportLine(line, cursor):
     query = f'select * from {table_name} {where_params}'
     cursor.execute(query)
 
-    with open(f'{table_name}.txt', 'w') as file_out:
-        writer = csv.writer(file_out, lineterminator='|\n', delimiter=';', escapechar='', quoting=csv.QUOTE_NONNUMERIC)
+    with open(f'{table_name}.txt', 'w', encoding='utf-8') as file_out:
+        writer = csv.writer(file_out, lineterminator='\n', delimiter=';', escapechar='\\', quoting=csv.QUOTE_ALL)
         
         columns = [i[0] for i in cursor.description]
 
@@ -38,7 +38,21 @@ def exportLine(line, cursor):
         writer.writerow(columns)
 
         for row in cursor:
-            writer.writerow(row)
+            #print(str(row))
+            cacheRow = []
+            for index, col in enumerate(row):
+                newCol = col
+                #print(isinstance(col, str) and '\t' in str(object=bytes(col, 'utf-8')))
+                if isinstance(col, str): #and '\t' in str(object=bytes(col, 'utf-8')):
+                    #print(col.replace('\t', 'XXXX'))
+                    #print(f'has TAB in {col}')
+                    newCol = col.replace('\t', '    ')
+                    #print(f'{row[index]}')
+
+                #print(f'{index} | {col}')
+                cacheRow.append(newCol)
+
+            writer.writerow(tuple(cacheRow))
 
 
 def createExternalTable(table_name, columns):
@@ -69,7 +83,7 @@ CREATE TABLE {table_name}_EXT
         DEFAULT DIRECTORY "EVVS_FILES"
         ACCESS PARAMETERS
             (
-                RECORDS DELIMITED BY '|'
+                RECORDS DELIMITED BY NEWLINE
                 SKIP 1
                 FIELDS TERMINATED BY ';' OPTIONALLY ENCLOSED BY '"'
                 MISSING FIELD VALUES ARE NULL
